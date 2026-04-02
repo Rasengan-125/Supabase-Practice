@@ -1,4 +1,5 @@
 import { supabase } from "@/utils/supabase";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -17,6 +18,8 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const redirectTo = Linking.createURL("/Screens/Home");
+
   const handleSignUp = async () => {
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
@@ -31,6 +34,9 @@ export default function SignUp() {
     const { error, data } = await supabase.auth.signUp({
       email: cleanEmail,
       password: cleanPassword,
+      options: {
+        emailRedirectTo: redirectTo,
+      },
     });
     console.log("SignUp data:", data);
     console.log("SignUp error:", error);

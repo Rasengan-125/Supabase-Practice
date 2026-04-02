@@ -1,7 +1,11 @@
+import { uploadImage } from "@/utils/storge";
 import { supabase } from "@/utils/supabase";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,9 +22,12 @@ const Home = () => {
     author: string;
     rating: number | null;
     review: string;
+    image_url?: string | null;
   };
   const router = useRouter();
   const [books, setBooks] = useState<Book[]>([]);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
@@ -32,15 +39,69 @@ const Home = () => {
     review: "",
   });
 
+  const pickImage = async () => {
+    // Request permission
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      alert("Permission to access photos is required!");
+      return;
+    }
+
+    // Open image picker
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    // Ensures an image was selected. Assets is an array of objects
+    //  with each obj containing: uri, width, height, filename, filesize
+    if (!result.canceled && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
   const handleSubmit = async () => {
     setErrorMessage(null);
 
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        setErrorMessage("You must be logged in to add a book.");
+        return;
+      }
+
+      let finalImageUrl = null;
+      if (imageUri) {
+        setUploading(true);
+        try {
+          // Now we upload to Supabase storage right before saving the book record
+          finalImageUrl = await uploadImage(userData.user.id, imageUri);
+        } catch (uploadErr) {
+          console.error(uploadErr);
+          setErrorMessage("Failed to upload image.");
+          setUploading(false);
+          return;
+        }
+        setUploading(false);
+      }
+      // Adds user Id to the book object to locate the owner easily
+      const bookData: any = {
+        ...newBook,
+        user_id: userData.user.id,
+      };
+
+      // Only include image_url if we actually have one,
+      // otherwise let the database default take over.
+      if (finalImageUrl) {
+        bookData.image_url = finalImageUrl;
+      }
+
       const { error, data } = await supabase
         .from("books")
-        .insert(newBook)
+        .insert(bookData)
         .select()
         .single();
+
       if (error) {
         setErrorMessage(
           error.message.includes("duplicate")
@@ -57,6 +118,7 @@ const Home = () => {
           review: "",
           rating: null,
         });
+        setImageUri(null);
         setSubmitted(true);
         setTimeout(() => {
           setSubmitted(false);
@@ -66,6 +128,7 @@ const Home = () => {
       setErrorMessage(err.message || "Something went wrong");
     }
   };
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -77,6 +140,18 @@ const Home = () => {
   const Notification = () => {
     return <Text style={styles.successText}>Book added successfully!</Text>;
   };
+
+  // useEffect(() => {
+  //   const getSessionData = async () => {
+  //     const { data, error } = await supabase.auth.getSession();
+  //     if (error) {
+  //       console.error("Session fetch error on mount:", error.message);
+  //     } else {
+  //       console.log("User session data on mount:", data.session);
+  //     }
+  //   };
+  //   getSessionData();
+  // }, []);
 
   useEffect(() => {
     const isFilled =
@@ -143,13 +218,38 @@ const Home = () => {
         }
         keyboardType="numeric"
       />
+      <TouchableOpacity
+        style={{
+          height: 160,
+          width: 120,
+          borderWidth: 1,
+          borderColor: "#9093d5",
+          borderRadius: 20,
+          justifyContent: "center",
+          alignItems: "center",
+          marginBottom: 15,
+          overflow: "hidden",
+        }}
+        onPress={pickImage}
+      >
+        {uploading ? (
+          <ActivityIndicator color="#9093d5" />
+        ) : imageUri ? (
+          <Image
+            source={{ uri: imageUri }}
+            style={{ width: "100%", height: "100%" }}
+          />
+        ) : (
+          <Text style={{ color: "#9093d5", fontSize: 15 }}>Upload Image</Text>
+        )}
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.button}
         onPress={() => {
           filled && handleSubmit();
         }}
-        disabled={!filled}
+        disabled={!filled || uploading}
       >
         <Text style={styles.buttonText}>Submit</Text>
       </TouchableOpacity>
@@ -165,6 +265,7 @@ const Home = () => {
     </ScrollView>
   );
 };
+
 export default Home;
 
 const styles = StyleSheet.create({

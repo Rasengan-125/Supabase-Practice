@@ -1,5 +1,7 @@
 import { getBooksCache, setBooksCache } from "@/utils/cache";
 import { supabase } from "@/utils/supabase";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -20,6 +22,7 @@ type Book = {
   rating: number | null;
   review: string;
   user_id: string;
+  image_url?: string;
 };
 
 const Notes = () => {
@@ -43,8 +46,6 @@ const Notes = () => {
       if (cached) {
         setNotes(cached);
         setLoading(false);
-        return;
-      } else {
       }
       const { error, data } = await supabase
         .from("books")
@@ -66,9 +67,19 @@ const Notes = () => {
     fetchBooks();
     getUid();
   }, []);
+
   const renderItem = ({ item }: { item: Book }) => {
     return (
       <View style={styles.card}>
+        <Image
+          source={
+            item.image_url
+              ? { uri: item.image_url }
+              : require("@/assets/images/book_image.jpeg")
+          }
+          style={styles.bookImage}
+          contentFit="cover"
+        />
         <Text style={styles.title}>{item.title}</Text>
 
         <Text style={styles.meta}>Author: {item.author}</Text>
@@ -96,7 +107,7 @@ const Notes = () => {
                   { cancelable: false },
                 );
               } else {
-                Alert.alert("You can only edit books that you added.");
+                Alert.alert("You can only delete books that you added.");
               }
             }}
           >
@@ -111,7 +122,7 @@ const Notes = () => {
                   params: { edit: item.id },
                 });
               } else {
-                Alert.alert("You can only delete books that you added.");
+                Alert.alert("You can only edit books that you added.");
               }
             }}
           >
@@ -121,6 +132,7 @@ const Notes = () => {
       </View>
     );
   };
+
   if (loading) {
     return (
       <ActivityIndicator
@@ -133,20 +145,34 @@ const Notes = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
-      <Text
+      <View
         style={{
-          fontSize: 28,
-          fontWeight: "bold",
-          margin: 15,
+          flexDirection: "row",
+          justifyContent: "space-between",
+          paddingHorizontal: 20,
         }}
       >
-        Books
-      </Text>
+        <Ionicons
+          name="arrow-back"
+          size={24}
+          color="black"
+          onPress={() => router.push("/Screens/Home")}
+        />
+        <Text
+          style={{
+            fontSize: 24,
+            fontWeight: "bold",
+            marginBottom: 20,
+          }}
+        >
+          Books
+        </Text>
+      </View>
 
       <FlatList
         data={notes}
         renderItem={renderItem}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ paddingBottom: 20 }}
       />
     </View>
@@ -189,6 +215,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     color: "#333",
+  },
+  bookImage: {
+    width: 120,
+    height: 160,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
   },
 
   buttonRow: {

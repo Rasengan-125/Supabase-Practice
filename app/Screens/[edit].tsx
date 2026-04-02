@@ -1,4 +1,8 @@
+import { uploadImage } from "@/utils/storge";
 import { supabase } from "@/utils/supabase";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -15,7 +19,9 @@ import {
 const Edit = () => {
   const router = useRouter();
   const [updating, setUpdating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const { edit: id } = useLocalSearchParams();
   const [editBook, setEditBook] = useState({
     title: "",
@@ -26,14 +32,14 @@ const Edit = () => {
   });
   const bookId = parseInt(id as string, 10);
 
-  if (isNaN(bookId)) {
-    console.error("Invalid ID:", id);
-    return;
-  }
-
-  // Fetch existing book
   useEffect(() => {
     const fetchBook = async () => {
+      if (isNaN(bookId)) {
+        Alert.alert("Error", "Invalid book ID");
+        router.push("/Screens/Note");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("books")
         .select("*")
@@ -41,39 +47,71 @@ const Edit = () => {
         .single();
 
       if (error) {
-        console.error("Error fetching book:", error.message);
-      } else {
-        setEditBook({
-          title: data.title,
-          genre: data.genre,
-          author: data.author,
-          rating: data.rating ?? null,
-          review: data.review,
-        });
+        Alert.alert("Error", "Could not fetch book details");
+        router.push("/Screens/Note");
+      } else if (data) {
+        setEditBook(data);
+        setImageUri(data.image_url);
       }
       setLoading(false);
     };
-
     fetchBook();
   }, [id]);
+
+  const pickImage = async () => {
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert(
+        "Permission Required",
+        "Permission to access photos is required!",
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
 
   // Update book
   const update = async () => {
     setUpdating(true);
-    const { error } = await supabase
-      .from("books")
-      .update(editBook)
-      .eq("id", bookId);
-    setLoading(false);
-    if (error) {
-      Alert.alert("Update Failed", error.message);
-    } else {
-      Alert.alert("Success", "Book updated successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.push("/Screens/Note"),
-        },
-      ]);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("User not found");
+
+      let finalImageUrl = imageUri;
+
+      // If the imageUri is a local file (from picker), upload it first
+      if (imageUri && !imageUri.startsWith("http")) {
+        setUploading(true);
+        finalImageUrl = await uploadImage(userData.user.id, imageUri);
+        setUploading(false);
+      }
+
+      const { error } = await supabase
+        .from("books")
+        .update({ ...editBook, image_url: finalImageUrl })
+        .eq("id", bookId);
+
+      if (error) {
+        Alert.alert("Update Failed", error.message);
+      } else {
+        Alert.alert("Success", "Book updated successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.push("/Screens/Note"),
+          },
+        ]);
+      }
+    } finally {
+      setUpdating(false); // Ensure updating state is reset regardless of success or failure
     }
   };
 
@@ -90,7 +128,15 @@ const Edit = () => {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.heading}>Edit Book</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Ionicons
+            name="arrow-back"
+            size={24}
+            color="black"
+            onPress={() => router.push("/Screens/Note")}
+          />
+          <Text style={styles.heading}>Edit Book</Text>
+        </View>
 
         <TextInput
           style={styles.input}
@@ -128,10 +174,36 @@ const Edit = () => {
           keyboardType="numeric"
           value={editBook.rating !== null ? String(editBook.rating) : ""}
           onChangeText={(text) => {
-            const parsed = text === "" ? null : Number(text);
+            const parsed =
+              text === "" ? null : Math.min(Math.max(Number(text), 1), 5);
             setEditBook({ ...editBook, rating: parsed });
           }}
         />
+        <TouchableOpacity
+          style={{
+            height: 160,
+            width: 120,
+            borderWidth: 1,
+            borderColor: "#9093d5",
+            borderRadius: 20,
+            justifyContent: "center",
+            alignItems: "center",
+            marginBottom: 15,
+            overflow: "hidden",
+          }}
+          onPress={pickImage}
+        >
+          {uploading ? (
+            <ActivityIndicator color="#9093d5" />
+          ) : imageUri ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={{ width: "100%", height: "100%" }}
+            />
+          ) : (
+            <Text style={{ color: "#9093d5", fontSize: 15 }}>Upload Image</Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.button} onPress={update}>
           <Text style={styles.buttonText}>Update Book</Text>
