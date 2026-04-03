@@ -12,13 +12,18 @@ import {
 } from "react-native";
 
 export default function SignUp() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const router = useRouter(); // Hook for navigation
+  // State variables for form inputs
+  const [email, setEmail] = useState(""); // Stores the user's email input
+  const [password, setPassword] = useState(""); // Stores the user's password input
+  // State variables for UI feedback
+  const [loading, setLoading] = useState(false); // Controls the loading indicator during sign-up
+  const [error, setError] = useState(""); // Stores and displays any error messages
 
-  const redirectTo = Linking.createURL("/Screens/Home");
+  // Creates a deep link URL for email redirection after sign-up.
+  // This URL will be used by Supabase to redirect the user back to the app
+  // after they confirm their email, specifically to the login screen.
+  const redirectTo = Linking.createURL("/Screens/login");
 
   const handleSignUp = async () => {
     const cleanEmail = email.trim();
@@ -31,10 +36,12 @@ export default function SignUp() {
     setLoading(true);
     setError("");
 
+    // Calls the Supabase authentication service to sign up a new user
     const { error, data } = await supabase.auth.signUp({
       email: cleanEmail,
       password: cleanPassword,
       options: {
+        // Specifies the URL to redirect to after email confirmation
         emailRedirectTo: redirectTo,
       },
     });
@@ -45,13 +52,16 @@ export default function SignUp() {
     if (error) {
       setError(error.message);
     }
-    // if (!data.user?.confirmed_at) {
-    //   setError(
-    //     "Please check your email to confirm your account before continuing.",
-    //   );
-    //   return;
-    // }
-    router.replace({ pathname: "/Screens/Home" }); // go to home screen
+    // The commented-out section below is typically used when email confirmation is required
+    // before allowing the user to proceed.
+
+    if (!data.user?.confirmed_at) {
+      setError(
+        "Please check your email to confirm your account before continuing.",
+      );
+      return;
+    }
+    router.replace({ pathname: "/Screens/Home" }); // Navigates to the home screen upon successful sign-up
   };
 
   return (
@@ -68,7 +78,7 @@ export default function SignUp() {
         onChangeText={setEmail}
       />
 
-      {/* Password */}
+      {/* Password input field */}
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -77,7 +87,7 @@ export default function SignUp() {
         onChangeText={setPassword}
       />
 
-      {/* Error */}
+      {/* Displays error message if any */}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* Button */}
@@ -89,7 +99,7 @@ export default function SignUp() {
         )}
       </TouchableOpacity>
 
-      {/* Link to Login */}
+      {/* Link to navigate to the Login screen */}
       <TouchableOpacity onPress={() => router.push("/Screens/login")}>
         <Text style={styles.link}>Already have an account? Log In</Text>
       </TouchableOpacity>
@@ -98,18 +108,21 @@ export default function SignUp() {
 }
 
 const styles = StyleSheet.create({
+  // Main container for the screen
   container: {
     flex: 1,
     justifyContent: "center",
     padding: 20,
     backgroundColor: "#fff",
   },
+  // Title styling for the page
   title: {
     fontSize: 28,
     fontWeight: "bold",
     marginBottom: 30,
     textAlign: "center",
   },
+  // Styling for text input fields
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -117,6 +130,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 15,
   },
+  // Styling for the main action button
   button: {
     backgroundColor: "#007BFF",
     padding: 15,
@@ -124,15 +138,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
+  // Text styling for the button
   buttonText: {
     color: "#fff",
     fontWeight: "bold",
   },
+  // Styling for error messages
   error: {
     color: "red",
     marginBottom: 10,
     textAlign: "center",
   },
+  // Styling for navigation links
   link: {
     marginTop: 20,
     textAlign: "center",

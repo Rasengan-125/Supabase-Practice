@@ -3,17 +3,19 @@ import { supabase } from "@/utils/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 
+// Define the structure for a Book object for type safety
 type Book = {
   id: number;
   title: string;
@@ -26,10 +28,12 @@ type Book = {
 };
 
 const Notes = () => {
-  const router = useRouter();
-  const [uid, setUid] = useState<string | null>(null);
-  const [notes, setNotes] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter(); // Hook for navigation
+  const [uid, setUid] = useState<string | null>(null); // Stores current user's ID
+  const [notes, setNotes] = useState<Book[]>([]); // List of books fetched from the DB
+  const [loading, setLoading] = useState(true); // Tracks loading state for the UI
+
+  // Handles deleting a book record from Supabase
   const handleDelete = async (id: number) => {
     const { error } = await supabase.from("books").delete().eq("id", id);
     if (error) {
@@ -39,39 +43,68 @@ const Notes = () => {
       setNotes((prev) => prev.filter((b) => b.id !== id));
     }
   };
-  useEffect(() => {
-    const fetchBooks = async () => {
-      setLoading(true);
-      const cached = getBooksCache();
-      if (cached) {
-        setNotes(cached);
-        setLoading(false);
-      }
-      const { error, data } = await supabase
-        .from("books")
-        .select("*")
-        .order("id", { ascending: false });
-      if (error) {
-        console.error("Error Here:", error.message);
-      } else {
-        setNotes(data ?? []);
-        setBooksCache(data ?? []);
-      }
+  const fetchBooks = async () => {
+    setLoading(true);
+    const cached = getBooksCache();
+    if (cached) {
+      setNotes(cached);
       setLoading(false);
-    };
-    const getUid = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUid(data.user?.id ?? null);
-    };
+    }
+    const { error, data } = await supabase
+      .from("books")
+      .select("*")
+      .order("id", { ascending: false });
+    if (error) {
+      console.error("Error Here:", error.message);
+    } else {
+      // Update state and refresh the local cache
+      setNotes(data ?? []);
+      setBooksCache(data ?? []);
+    }
+    setLoading(false);
+  };
 
+  // Retrieves the authenticated user's ID
+  const getUid = async () => {
+    const { data } = await supabase.auth.getUser();
+    setUid(data.user?.id ?? null);
+  };
+
+  // Initial data fetch and UID retrieval on component mount
+  useEffect(() => {
     fetchBooks();
     getUid();
   }, []);
 
+  // Subscribes to real-time 'INSERT' events on the 'books' table
+  useEffect(() => {
+    const channel = supabase.channel("books-channel");
+    channel
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "books" },
+        (payload) => {
+          const newBook = payload.new as Book;
+          setNotes((prev) => [...prev, newBook]);
+        },
+      )
+      .subscribe((status) => console.log("Subscription", status));
+  }, []);
+
+  // Pull-to-refresh logic
+  const onRefresh = useCallback(async () => {
+    setLoading(true);
+    const newData = await fetchBooks();
+    setNotes((prev) => [...(newData ?? []), ...prev]);
+    setLoading(false);
+  }, []);
+
+  // Renders a single book card item in the list
   const renderItem = ({ item }: { item: Book }) => {
     return (
       <View style={styles.card}>
         <Image
+          // Use book image if available, otherwise use a local placeholder
           source={
             item.image_url
               ? { uri: item.image_url }
@@ -89,6 +122,7 @@ const Notes = () => {
         <Text style={styles.review}>{item.review}</Text>
 
         <View style={styles.buttonRow}>
+          {/* Only allow deletion if the book belongs to the current user */}
           <TouchableOpacity
             style={[styles.button, styles.deleteBtn]}
             onPress={() => {
@@ -113,6 +147,8 @@ const Notes = () => {
           >
             <Text style={styles.buttonText}>Delete</Text>
           </TouchableOpacity>
+
+          {/* Only allow editing if the book belongs to the current user */}
           <TouchableOpacity
             style={[styles.button, styles.editBtn]}
             onPress={() => {
@@ -133,6 +169,7 @@ const Notes = () => {
     );
   };
 
+  // Render a spinner while data is being loaded for the first time
   if (loading) {
     return (
       <ActivityIndicator
@@ -145,6 +182,7 @@ const Notes = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      {/* Header Bar */}
       <View
         style={{
           flexDirection: "row",
@@ -169,11 +207,15 @@ const Notes = () => {
         </Text>
       </View>
 
+      {/* Scrollable list of books */}
       <FlatList
         data={notes}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={onRefresh} />
+        }
       />
     </View>
   );

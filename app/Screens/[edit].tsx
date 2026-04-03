@@ -18,10 +18,13 @@ import {
 
 const Edit = () => {
   const router = useRouter();
+  // State management for loading indicators and book data
   const [updating, setUpdating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Stores the URI for the book cover image
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // Get the 'edit' parameter from the dynamic route which serves as the book ID
   const { edit: id } = useLocalSearchParams();
   const [editBook, setEditBook] = useState({
     title: "",
@@ -32,6 +35,7 @@ const Edit = () => {
   });
   const bookId = parseInt(id as string, 10);
 
+  // Fetch the book's existing details from Supabase when the component mounts
   useEffect(() => {
     const fetchBook = async () => {
       if (isNaN(bookId)) {
@@ -58,6 +62,7 @@ const Edit = () => {
     fetchBook();
   }, [id]);
 
+  // Launch the image library to pick a new cover image
   const pickImage = async () => {
     const permissionResult =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -79,7 +84,7 @@ const Edit = () => {
     }
   };
 
-  // Update book
+  // Handles the update process: uploads new images and saves changes to Supabase
   const update = async () => {
     setUpdating(true);
     try {
@@ -88,7 +93,7 @@ const Edit = () => {
 
       let finalImageUrl = imageUri;
 
-      // If the imageUri is a local file (from picker), upload it first
+      // If the imageUri is a local file path (not a URL), upload it to storage
       if (imageUri && !imageUri.startsWith("http")) {
         setUploading(true);
         finalImageUrl = await uploadImage(userData.user.id, imageUri);
@@ -115,6 +120,7 @@ const Edit = () => {
     }
   };
 
+  // Render a loading spinner while initial book data is being fetched
   if (loading) {
     return (
       <ActivityIndicator
@@ -128,6 +134,7 @@ const Edit = () => {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Header navigation and title */}
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Ionicons
             name="arrow-back"
@@ -138,6 +145,7 @@ const Edit = () => {
           <Text style={styles.heading}>Edit Book</Text>
         </View>
 
+        {/* Input fields for editing book metadata */}
         <TextInput
           style={styles.input}
           placeholder="Title"
@@ -179,6 +187,7 @@ const Edit = () => {
             setEditBook({ ...editBook, rating: parsed });
           }}
         />
+        {/* Image picker section showing the current or newly selected image */}
         <TouchableOpacity
           style={{
             height: 160,
@@ -209,6 +218,7 @@ const Edit = () => {
           <Text style={styles.buttonText}>Update Book</Text>
         </TouchableOpacity>
       </ScrollView>
+      {/* Activity indicator overlay while the database update is in progress */}
       {updating && (
         <View style={styles.overlay}>
           <ActivityIndicator

@@ -11,25 +11,32 @@ import {
 } from "react-native";
 
 export default function Login() {
-  const router = useRouter();
+  const router = useRouter(); // Hook to handle navigation between screens
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  // State management for user credentials and UI feedback
+  const [email, setEmail] = useState(""); // Tracks email input
+  const [password, setPassword] = useState(""); // Tracks password input
+  const [loading, setLoading] = useState(false); // Controls the activity spinner
+  const [error, setError] = useState(""); // Stores error messages from validation or Supabase
 
+  /**
+   * Handles the sign-in process using Supabase Authentication.
+   */
   const handleLogIn = async () => {
+    // Sanitize inputs by removing leading/trailing whitespace
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
+    // Basic client-side validation to ensure fields aren't empty
     if (!cleanEmail || !cleanPassword) {
       setError("Please fill all fields");
       return;
     }
 
-    setLoading(true);
+    setLoading(true); // Start the loading indicator
     setError("");
 
+    // Attempt to authenticate the user with Supabase
     const { error } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: cleanPassword,
@@ -38,9 +45,11 @@ export default function Login() {
     setLoading(false);
 
     if (error) {
+      // If Supabase returns an error (e.g., invalid credentials), show it to the user
       setError(error.message);
     } else {
-      router.replace({ pathname: "/Screens/Home" }); // go to home screen
+      // On success, redirect to the Home screen and clear the navigation history
+      router.replace({ pathname: "/Screens/Home" });
     }
   };
 
@@ -48,7 +57,7 @@ export default function Login() {
     <View style={styles.container}>
       <Text style={styles.title}>Log In</Text>
 
-      {/* Email */}
+      {/* Email input field */}
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -58,19 +67,19 @@ export default function Login() {
         onChangeText={setEmail}
       />
 
-      {/* Password */}
+      {/* Password input field */}
       <TextInput
         style={styles.input}
         placeholder="Password"
-        // secureTextEntry
+        // Note: secureTextEntry should be uncommented in production to hide characters
         value={password}
         onChangeText={setPassword}
       />
 
-      {/* Error */}
+      {/* Conditional rendering for error messages */}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {/* Button */}
+      {/* Submission button with loading state support */}
       <TouchableOpacity style={styles.button} onPress={handleLogIn}>
         {loading ? (
           <ActivityIndicator color="#fff" />
@@ -79,7 +88,7 @@ export default function Login() {
         )}
       </TouchableOpacity>
 
-      {/* Link to Sign Up */}
+      {/* Navigation link for users who don't have an account yet */}
       <TouchableOpacity onPress={() => router.push("/Screens/signUp")}>
         <Text style={styles.link}>Don’t have an account? Sign Up</Text>
       </TouchableOpacity>
@@ -88,6 +97,7 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
+  // Main screen container
   container: {
     flex: 1,
     justifyContent: "center",
@@ -100,6 +110,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     textAlign: "center",
   },
+  // Reusable input styling
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -118,11 +129,13 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
   },
+  // Styling for the error text displayed above the button
   error: {
     color: "red",
     marginBottom: 10,
     textAlign: "center",
   },
+  // Styling for the "Sign Up" navigation link
   link: {
     marginTop: 20,
     textAlign: "center",

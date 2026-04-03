@@ -7,6 +7,7 @@ export default function Index() {
   const [session, setSession] = useState(false);
   const [checkSession, setCheckSession] = useState(false);
 
+  // Get user session when the screen loads
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(!!session);
@@ -14,6 +15,7 @@ export default function Index() {
     });
   }, []);
 
+  // Loading spiner background while its checking for session
   if (!checkSession) {
     return (
       <View
@@ -28,6 +30,8 @@ export default function Index() {
       </View>
     );
   }
+
+  // If theres a session, go to home screen. Else go to login screen
   return session ? (
     <Redirect href="/Screens/Home" />
   ) : (

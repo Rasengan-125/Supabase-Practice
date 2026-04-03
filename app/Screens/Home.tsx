@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 const Home = () => {
+  // Define the structure for a Book object
   type Book = {
     id: number;
     created_at: Date;
@@ -24,13 +25,15 @@ const Home = () => {
     review: string;
     image_url?: string | null;
   };
-  const router = useRouter();
-  const [books, setBooks] = useState<Book[]>([]);
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filled, setFilled] = useState(false);
+  const router = useRouter(); // Hook for navigation
+  const [books, setBooks] = useState<Book[]>([]); // Local state for added books
+  const [imageUri, setImageUri] = useState<string | null>(null); // Local URI of the selected image
+  const [uploading, setUploading] = useState(false); // Loading state for image uploads
+  const [submitted, setSubmitted] = useState(false); // Controls success notification visibility
+  const [errorMessage, setErrorMessage] = useState<string | null>(null); // Stores error messages
+  const [filled, setFilled] = useState(false); // Tracks if all required fields are filled
+
+  // Form state for a new book entry
   const [newBook, setNewBook] = useState({
     title: "",
     genre: "",
@@ -39,6 +42,7 @@ const Home = () => {
     review: "",
   });
 
+  // Handles selecting an image from the device's media library
   const pickImage = async () => {
     // Request permission
     const permissionResult =
@@ -60,10 +64,12 @@ const Home = () => {
     }
   };
 
+  // Handles the submission logic for adding a new book
   const handleSubmit = async () => {
     setErrorMessage(null);
 
     try {
+      // Ensure the user is authenticated before allowing insertion
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         setErrorMessage("You must be logged in to add a book.");
@@ -71,6 +77,7 @@ const Home = () => {
       }
 
       let finalImageUrl = null;
+      // If an image was selected, upload it to Supabase Storage first
       if (imageUri) {
         setUploading(true);
         try {
@@ -96,6 +103,7 @@ const Home = () => {
         bookData.image_url = finalImageUrl;
       }
 
+      // Insert the new book record into the 'books' table
       const { error, data } = await supabase
         .from("books")
         .insert(bookData)
@@ -110,6 +118,7 @@ const Home = () => {
         );
         return;
       } else {
+        // Update local state and reset form fields upon success
         setBooks((prev) => [...prev, data]);
         setNewBook({
           title: "",
@@ -120,6 +129,7 @@ const Home = () => {
         });
         setImageUri(null);
         setSubmitted(true);
+        // Hide success notification after 3 seconds
         setTimeout(() => {
           setSubmitted(false);
         }, 3000);
@@ -129,6 +139,7 @@ const Home = () => {
     }
   };
 
+  // Logs the user out and redirects to the login screen
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -137,22 +148,13 @@ const Home = () => {
       router.replace("/Screens/login");
     }
   };
+
+  // Simple UI component for success feedback
   const Notification = () => {
     return <Text style={styles.successText}>Book added successfully!</Text>;
   };
 
-  // useEffect(() => {
-  //   const getSessionData = async () => {
-  //     const { data, error } = await supabase.auth.getSession();
-  //     if (error) {
-  //       console.error("Session fetch error on mount:", error.message);
-  //     } else {
-  //       console.log("User session data on mount:", data.session);
-  //     }
-  //   };
-  //   getSessionData();
-  // }, []);
-
+  // Validation hook to check if all required fields have data
   useEffect(() => {
     const isFilled =
       newBook.author.trim() !== "" &&
@@ -166,8 +168,11 @@ const Home = () => {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Add Book</Text>
+
+      {/* Feedback messages */}
       {submitted && <Notification />}
       {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+      {/* Title */}
       <TextInput
         style={styles.input}
         placeholder="Title"
@@ -176,7 +181,7 @@ const Home = () => {
           setNewBook((prev) => ({ ...prev, title: text }))
         }
       />
-
+      {/* Genre */}
       <TextInput
         style={styles.input}
         placeholder="Genre"
@@ -185,7 +190,7 @@ const Home = () => {
           setNewBook((prev) => ({ ...prev, genre: text }))
         }
       />
-
+      {/* Author */}
       <TextInput
         style={styles.input}
         placeholder="Author"
@@ -194,7 +199,7 @@ const Home = () => {
           setNewBook((prev) => ({ ...prev, author: text }))
         }
       />
-
+      {/* Review */}
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Review"
@@ -205,7 +210,7 @@ const Home = () => {
         multiline
         numberOfLines={4}
       />
-
+      {/* Ratings */}
       <TextInput
         style={styles.input}
         placeholder="Rating (1-5)"
@@ -218,20 +223,9 @@ const Home = () => {
         }
         keyboardType="numeric"
       />
-      <TouchableOpacity
-        style={{
-          height: 160,
-          width: 120,
-          borderWidth: 1,
-          borderColor: "#9093d5",
-          borderRadius: 20,
-          justifyContent: "center",
-          alignItems: "center",
-          marginBottom: 15,
-          overflow: "hidden",
-        }}
-        onPress={pickImage}
-      >
+
+      {/* Image Picker Trigger and Preview */}
+      <TouchableOpacity style={styles.imageBtn} onPress={pickImage}>
         {uploading ? (
           <ActivityIndicator color="#9093d5" />
         ) : imageUri ? (
@@ -244,6 +238,7 @@ const Home = () => {
         )}
       </TouchableOpacity>
 
+      {/* Submit Buttons */}
       <TouchableOpacity
         style={styles.button}
         onPress={() => {
@@ -253,12 +248,16 @@ const Home = () => {
       >
         <Text style={styles.buttonText}>Submit</Text>
       </TouchableOpacity>
+
+      {/* Go to notes screen button */}
       <TouchableOpacity
         style={styles.button}
         onPress={() => router.push("/Screens/Note")}
       >
         <Text style={styles.buttonText}>Notes</Text>
       </TouchableOpacity>
+
+      {/* Log out button */}
       <TouchableOpacity style={styles.button} onPress={handleLogout}>
         <Text style={styles.buttonText}>Log Out</Text>
       </TouchableOpacity>
@@ -314,5 +313,16 @@ const styles = StyleSheet.create({
     borderColor: "green",
     borderRadius: 5,
     padding: 5,
+  },
+  imageBtn: {
+    height: 160,
+    width: 120,
+    borderWidth: 1,
+    borderColor: "#9093d5",
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 15,
+    overflow: "hidden",
   },
 });
