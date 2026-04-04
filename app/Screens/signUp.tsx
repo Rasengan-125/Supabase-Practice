@@ -22,8 +22,8 @@ export default function SignUp() {
 
   // Creates a deep link URL for email redirection after sign-up.
   // This URL will be used by Supabase to redirect the user back to the app
-  // after they confirm their email, specifically to the login screen.
-  const redirectTo = Linking.createURL("/Screens/login");
+  // after they confirm their email. Redirecting to "/" ensures index.tsx handles the session.
+  const redirectTo = Linking.createURL("/auth/callback");
 
   const handleSignUp = async () => {
     const cleanEmail = email.trim();
@@ -52,8 +52,6 @@ export default function SignUp() {
     if (error) {
       setError(error.message);
     }
-    // The commented-out section below is typically used when email confirmation is required
-    // before allowing the user to proceed.
 
     if (!data.user?.confirmed_at) {
       setError(
@@ -61,7 +59,6 @@ export default function SignUp() {
       );
       return;
     }
-    router.replace({ pathname: "/Screens/Home" }); // Navigates to the home screen upon successful sign-up
   };
 
   return (

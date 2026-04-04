@@ -154,6 +154,18 @@ const Home = () => {
     return <Text style={styles.successText}>Book added successfully!</Text>;
   };
 
+  useEffect(() => {
+    const getUserSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error(error);
+      } else {
+        console.log(data);
+      }
+    };
+    getUserSession();
+  }, []);
+
   // Validation hook to check if all required fields have data
   useEffect(() => {
     const isFilled =
