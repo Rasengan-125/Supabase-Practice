@@ -11,10 +11,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  View,
 } from "react-native";
 
 const Home = () => {
-  // Define the structure for a Book object
   type Book = {
     id: number;
     created_at: Date;
@@ -25,15 +25,22 @@ const Home = () => {
     review: string;
     image_url?: string | null;
   };
-  const router = useRouter(); // Hook for navigation
-  const [books, setBooks] = useState<Book[]>([]); // Local state for added books
-  const [imageUri, setImageUri] = useState<string | null>(null); // Local URI of the selected image
-  const [uploading, setUploading] = useState(false); // Loading state for image uploads
-  const [submitted, setSubmitted] = useState(false); // Controls success notification visibility
-  const [errorMessage, setErrorMessage] = useState<string | null>(null); // Stores error messages
-  const [filled, setFilled] = useState(false); // Tracks if all required fields are filled
 
-  // Form state for a new book entry
+  const router = useRouter();
+  const [books, setBooks] = useState<Book[]>([]);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filled, setFilled] = useState(false);
+
+  // --- New/Recurring user state ---
+  // "new"       = anonymous user on first ever launch (created_at within last 10s)
+  // "returning" = anonymous user who has used the app before
+  // "member"    = has a real email account
+  type UserKind = "new" | "returning" | "member" | null;
+  const [userKind, setUserKind] = useState<UserKind>(null);
+
   const [newBook, setNewBook] = useState({
     title: "",
     genre: "",
@@ -42,34 +49,58 @@ const Home = () => {
     review: "",
   });
 
-  // Handles selecting an image from the device's media library
+  // Detect whether this is a new user, a returning anonymous user, or a member
+  useEffect(() => {
+    const detectUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (!user) return;
+
+      if (!user.is_anonymous) {
+        // Has email — confirmed member
+        setUserKind("member");
+        return;
+      }
+
+      // Anonymous user: compare created_at to now.
+      // If the account was created less than 15 seconds ago, treat as "new".
+      const createdAt = new Date(user.created_at).getTime();
+      const ageSeconds = (Date.now() - createdAt) / 1000;
+      setUserKind(ageSeconds < 15 ? "new" : "returning");
+    };
+
+    detectUser();
+  }, []);
+
   const pickImage = async () => {
-    // Request permission
     const permissionResult =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
       alert("Permission to access photos is required!");
       return;
     }
-
-    // Open image picker
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
     });
-    // Ensures an image was selected. Assets is an array of objects
-    //  with each obj containing: uri, width, height, filename, filesize
     if (!result.canceled && result.assets.length > 0) {
       setImageUri(result.assets[0].uri);
     }
   };
 
-  // Handles the submission logic for adding a new book
   const handleSubmit = async () => {
     setErrorMessage(null);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    // Anonymous users must sign up before adding books
+    if (session?.user.is_anonymous) {
+      router.push("/auth/signUp");
+      return;
+    }
 
     try {
-      // Ensure the user is authenticated before allowing insertion
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         setErrorMessage("You must be logged in to add a book.");
@@ -77,11 +108,9 @@ const Home = () => {
       }
 
       let finalImageUrl = null;
-      // If an image was selected, upload it to Supabase Storage first
       if (imageUri) {
         setUploading(true);
         try {
-          // Now we upload to Supabase storage right before saving the book record
           finalImageUrl = await uploadImage(userData.user.id, imageUri);
         } catch (uploadErr) {
           console.error(uploadErr);
@@ -91,19 +120,10 @@ const Home = () => {
         }
         setUploading(false);
       }
-      // Adds user Id to the book object to locate the owner easily
-      const bookData: any = {
-        ...newBook,
-        user_id: userData.user.id,
-      };
 
-      // Only include image_url if we actually have one,
-      // otherwise let the database default take over.
-      if (finalImageUrl) {
-        bookData.image_url = finalImageUrl;
-      }
+      const bookData: any = { ...newBook, user_id: userData.user.id };
+      if (finalImageUrl) bookData.image_url = finalImageUrl;
 
-      // Insert the new book record into the 'books' table
       const { error, data } = await supabase
         .from("books")
         .insert(bookData)
@@ -117,104 +137,127 @@ const Home = () => {
             : error.message,
         );
         return;
-      } else {
-        // Update local state and reset form fields upon success
-        setBooks((prev) => [...prev, data]);
-        setNewBook({
-          title: "",
-          genre: "",
-          author: "",
-          review: "",
-          rating: null,
-        });
-        setImageUri(null);
-        setSubmitted(true);
-        // Hide success notification after 3 seconds
-        setTimeout(() => {
-          setSubmitted(false);
-        }, 3000);
       }
+
+      setBooks((prev) => [...prev, data]);
+      setNewBook({
+        title: "",
+        genre: "",
+        author: "",
+        review: "",
+        rating: null,
+      });
+      setImageUri(null);
+      setSubmitted(true);
+      setTimeout(() => setSubmitted(false), 3000);
     } catch (err: any) {
       setErrorMessage(err.message || "Something went wrong");
     }
   };
 
-  // Logs the user out and redirects to the login screen
+  // Fixed: was routing to wrong path "/Screens/login"
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Logout failed:", error.message);
     } else {
-      router.replace("/Screens/login");
+      router.replace("/"); // go back to index which creates a fresh anon session
     }
   };
 
-  // Simple UI component for success feedback
-  const Notification = () => {
-    return <Text style={styles.successText}>Book added successfully!</Text>;
-  };
-
-  useEffect(() => {
-    const getUserSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error(error);
-      } else {
-        console.log(data);
-      }
-    };
-    getUserSession();
-  }, []);
-
-  // Validation hook to check if all required fields have data
   useEffect(() => {
     const isFilled =
       newBook.author.trim() !== "" &&
       newBook.title.trim() !== "" &&
       newBook.genre.trim() !== "" &&
       newBook.rating !== null;
-
     setFilled(isFilled);
   }, [newBook]);
+
+  // Banner colours and messages per user kind
+  const bannerConfig: Record<
+    NonNullable<UserKind>,
+    { bg: string; text: string; label: string }
+  > = {
+    new: {
+      bg: "#e0f7e9",
+      text: "#1a7a3c",
+      label: "👋 Welcome! You're browsing as a guest.",
+    },
+    returning: {
+      bg: "#fff8e1",
+      text: "#8a6000",
+      label: "👤 Welcome back, guest! Sign up to save your books.",
+    },
+    member: {
+      bg: "#e8f0fe",
+      text: "#1a56db",
+      label: "✅ Signed in as a member.",
+    },
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Add Book</Text>
 
-      {/* Feedback messages */}
-      {submitted && <Notification />}
+      {/* ── User kind banner ── */}
+      {userKind && (
+        <View
+          style={[
+            styles.banner,
+            { backgroundColor: bannerConfig[userKind].bg },
+          ]}
+        >
+          <Text
+            style={[styles.bannerText, { color: bannerConfig[userKind].text }]}
+          >
+            {bannerConfig[userKind].label}
+          </Text>
+          {/* Prompt guests to sign up */}
+          {(userKind === "new" || userKind === "returning") && (
+            <TouchableOpacity onPress={() => router.push("/auth/signUp")}>
+              <Text style={styles.bannerLink}>Sign up to save your work →</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {submitted && (
+        <Text style={styles.successText}>Book added successfully!</Text>
+      )}
       {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
-      {/* Title */}
+
       <TextInput
         style={styles.input}
         placeholder="Title"
+        placeholderTextColor="#888888"
         value={newBook.title}
         onChangeText={(text) =>
           setNewBook((prev) => ({ ...prev, title: text }))
         }
       />
-      {/* Genre */}
       <TextInput
         style={styles.input}
         placeholder="Genre"
+        placeholderTextColor="#888888"
         value={newBook.genre}
         onChangeText={(text) =>
           setNewBook((prev) => ({ ...prev, genre: text }))
         }
       />
-      {/* Author */}
       <TextInput
         style={styles.input}
         placeholder="Author"
+        placeholderTextColor="#888888"
         value={newBook.author}
         onChangeText={(text) =>
           setNewBook((prev) => ({ ...prev, author: text }))
         }
       />
-      {/* Review */}
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Review"
+        placeholderTextColor="#888888"
         value={newBook.review}
         onChangeText={(text) =>
           setNewBook((prev) => ({ ...prev, review: text }))
@@ -222,10 +265,10 @@ const Home = () => {
         multiline
         numberOfLines={4}
       />
-      {/* Ratings */}
       <TextInput
         style={styles.input}
         placeholder="Rating (1-5)"
+        placeholderTextColor="#888888"
         value={newBook.rating !== null ? newBook.rating.toString() : ""}
         onChangeText={(text) =>
           setNewBook((prev) => ({
@@ -236,7 +279,6 @@ const Home = () => {
         keyboardType="numeric"
       />
 
-      {/* Image Picker Trigger and Preview */}
       <TouchableOpacity style={styles.imageBtn} onPress={pickImage}>
         {uploading ? (
           <ActivityIndicator color="#9093d5" />
@@ -250,18 +292,14 @@ const Home = () => {
         )}
       </TouchableOpacity>
 
-      {/* Submit Buttons */}
       <TouchableOpacity
-        style={styles.button}
-        onPress={() => {
-          filled && handleSubmit();
-        }}
+        style={[styles.button, (!filled || uploading) && styles.buttonDisabled]}
+        onPress={() => filled && handleSubmit()}
         disabled={!filled || uploading}
       >
         <Text style={styles.buttonText}>Submit</Text>
       </TouchableOpacity>
 
-      {/* Go to notes screen button */}
       <TouchableOpacity
         style={styles.button}
         onPress={() => router.push("/Screens/Note")}
@@ -269,8 +307,10 @@ const Home = () => {
         <Text style={styles.buttonText}>Notes</Text>
       </TouchableOpacity>
 
-      {/* Log out button */}
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
+      <TouchableOpacity
+        style={[styles.button, styles.logoutBtn]}
+        onPress={handleLogout}
+      >
         <Text style={styles.buttonText}>Log Out</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -281,14 +321,30 @@ export default Home;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     padding: 20,
     backgroundColor: "#fff",
   },
   heading: {
     fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  banner: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    gap: 4,
+  },
+  bannerText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  bannerLink: {
+    fontSize: 12,
+    color: "#007BFF",
+    marginTop: 4,
+    fontWeight: "500",
   },
   input: {
     borderWidth: 1,
@@ -302,11 +358,17 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   button: {
-    marginVertical: 10,
+    marginVertical: 8,
     backgroundColor: "#007BFF",
     padding: 15,
     borderRadius: 8,
     alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  logoutBtn: {
+    backgroundColor: "#ef4444",
   },
   buttonText: {
     color: "#fff",

@@ -111,7 +111,7 @@ const Edit = () => {
         Alert.alert("Success", "Book updated successfully!", [
           {
             text: "OK",
-            onPress: () => router.push("/Screens/Note"),
+            onPress: () => router.replace("/Screens/Note"),
           },
         ]);
       }

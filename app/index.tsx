@@ -1,59 +1,62 @@
 import { supabase } from "@/utils/supabase";
-import * as Linking from "expo-linking";
-import { Redirect } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { useAuth } from "../context/authContext";
 
-export default function Index() {
-  const [hasSession, setHasSession] = useState<boolean | null>(null);
-  const url = Linking.useURL();
-
-  // Detect if the app was opened via an authentication deep link (contains a code).
-  // If so, we must wait for /auth/callback to exchange the code for a session
-  // before we decide to redirect the user to the login page.
-  const isAuthCallback = url?.includes("code=") || url?.includes("error=");
+export default function IndexScreen() {
+  const { isLoading, signInAnonymously } = useAuth();
+  const router = useRouter();
+  const hasRun = useRef(false); // ← prevent double-execution from StrictMode / re-renders
 
   useEffect(() => {
-    // Check for an existing session on mount
-    const getInitialSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setHasSession(!!session);
+    if (isLoading || hasRun.current) return;
+    hasRun.current = true;
+
+    const bootstrap = async () => {
+      // Validate the session by actually hitting Supabase, not just reading
+      // from AsyncStorage. If the user was deleted, getUser() returns an error
+      // even though getSession() would still return a stale cached session.
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+
+      if (userData?.user && !userError) {
+        // Valid live session — go straight to the app
+        router.replace({ pathname: "/Screens/Home" });
+        return;
+      }
+
+      // Session is stale or missing — clear it and create a fresh anonymous user
+      await supabase.auth.signOut(); // clears AsyncStorage cache
+      try {
+        await signInAnonymously();
+        router.replace({ pathname: "/Screens/Home" });
+      } catch (err: any) {
+        Alert.alert("Sign-in failed", err.message ?? "Please try again.");
+      }
     };
 
-    getInitialSession();
+    bootstrap();
+  }, [isLoading]); // ← only depends on isLoading, not session, so it won't loop
 
-    // Listen for auth state changes (e.g., session creation via confirmation link)
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setHasSession(!!session);
-      },
-    );
-
-    return () => authListener.subscription.unsubscribe();
-  }, []); // Only set up the listener once on mount
-
-  // Show a loading spinner while determining the authentication state
-  if (hasSession === null || (isAuthCallback && !hasSession)) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#fff",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <ActivityIndicator size={"large"} color={"#007BFF"} />
-      </View>
-    );
-  }
-
-  // Redirect based on whether a session exists
-  return hasSession ? (
-    <Redirect href="/Screens/Home" />
-  ) : (
-    <Redirect href="/Screens/login" />
+  return (
+    <View style={styles.container}>
+      <ActivityIndicator size="large" color="#6366f1" />
+      <Text style={styles.label}>Setting up your session…</Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0f0f12",
+    gap: 16,
+  },
+  label: {
+    color: "#a1a1aa",
+    fontSize: 14,
+  },
+});
