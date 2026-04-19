@@ -1,3 +1,6 @@
+import { useBooks } from "@/hooks/useBooks";
+import { useCreateBook } from "@/hooks/useCreateBooks";
+import useAuthStore from "@/Store/useAuthStore";
 import { uploadImage } from "@/utils/storge";
 import { supabase } from "@/utils/supabase";
 import * as ImagePicker from "expo-image-picker";
@@ -27,20 +30,20 @@ const Home = () => {
   };
 
   const router = useRouter();
-  const [books, setBooks] = useState<Book[]>([]);
+
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const session = useAuthStore((state) => state.session);
+  const { data: books } = useBooks();
+  const count = books?.length ?? 0;
 
-  // --- New/Recurring user state ---
-  // "new"       = anonymous user on first ever launch (created_at within last 10s)
-  // "returning" = anonymous user who has used the app before
-  // "member"    = has a real email account
   type UserKind = "new" | "returning" | "member" | null;
   const [userKind, setUserKind] = useState<UserKind>(null);
-
+  const { mutate: createBook, isPending: isCreating } = useCreateBook();
   const [newBook, setNewBook] = useState({
     title: "",
     genre: "",
@@ -52,8 +55,6 @@ const Home = () => {
   // Detect whether this is a new user, a returning anonymous user, or a member
   useEffect(() => {
     const detectUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      const user = data?.user;
       if (!user) return;
 
       if (!user.is_anonymous) {
@@ -90,9 +91,6 @@ const Home = () => {
 
   const handleSubmit = async () => {
     setErrorMessage(null);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
 
     // Anonymous users must sign up before adding books
     if (session?.user.is_anonymous) {
@@ -100,69 +98,55 @@ const Home = () => {
       return;
     }
 
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) {
-        setErrorMessage("You must be logged in to add a book.");
-        return;
-      }
-
-      let finalImageUrl = null;
-      if (imageUri) {
-        setUploading(true);
-        try {
-          finalImageUrl = await uploadImage(userData.user.id, imageUri);
-        } catch (uploadErr) {
-          console.error(uploadErr);
-          setErrorMessage("Failed to upload image.");
-          setUploading(false);
-          return;
-        }
+    let finalImageUrl = null;
+    if (imageUri) {
+      setUploading(true);
+      try {
+        if (user) finalImageUrl = await uploadImage(user.id, imageUri);
+      } catch (uploadErr) {
+        console.error(uploadErr);
+        setErrorMessage("Failed to upload image.");
         setUploading(false);
-      }
-
-      const bookData: any = { ...newBook, user_id: userData.user.id };
-      if (finalImageUrl) bookData.image_url = finalImageUrl;
-
-      const { error, data } = await supabase
-        .from("books")
-        .insert(bookData)
-        .select()
-        .single();
-
-      if (error) {
-        setErrorMessage(
-          error.message.includes("duplicate")
-            ? "This book already exists!"
-            : error.message,
-        );
         return;
       }
-
-      setBooks((prev) => [...prev, data]);
-      setNewBook({
-        title: "",
-        genre: "",
-        author: "",
-        review: "",
-        rating: null,
-      });
-      setImageUri(null);
-      setSubmitted(true);
-      setTimeout(() => setSubmitted(false), 3000);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Something went wrong");
+      setUploading(false);
     }
+    createBook(
+      {
+        title: newBook.title,
+        genre: newBook.genre,
+        author: newBook.author,
+        rating: newBook.rating,
+        review: newBook.review,
+        imageUrl: finalImageUrl,
+      },
+      {
+        onSuccess: () => {
+          setNewBook({
+            title: "",
+            genre: "",
+            author: "",
+            rating: null,
+            review: "",
+          });
+          setImageUri(null);
+          setSubmitted(true);
+          setTimeout(() => setSubmitted(false), 3000);
+        },
+        onError: (error: any) => {
+          setErrorMessage(error.message || "Something went wrong");
+        },
+      },
+    );
   };
 
   // Fixed: was routing to wrong path "/Screens/login"
+  // ✅ just sign out — let the auth store react and redirect
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Logout failed:", error.message);
-    } else {
-      router.replace("/"); // go back to index which creates a fresh anon session
-    }
+    if (error) console.error("Logout failed:", error.message);
+    router.replace("/");
+    // no navigation here — onAuthStateChange will fire and handle it
   };
 
   useEffect(() => {
@@ -198,10 +182,13 @@ const Home = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.heading}>Add Book</Text>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <Text style={styles.heading}>Add Book</Text>
+        <Text style={styles.heading}>{count}</Text>
+      </View>
 
       {/* ── User kind banner ── */}
-      {userKind && (
+      {userKind && bannerConfig[userKind] && (
         <View
           style={[
             styles.banner,
@@ -304,7 +291,13 @@ const Home = () => {
         style={styles.button}
         onPress={() => router.push("/Screens/Note")}
       >
-        <Text style={styles.buttonText}>Notes</Text>
+        <Text style={styles.buttonText}>Books</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => router.push("/Screens/practice")}
+      >
+        <Text style={styles.buttonText}>Practice</Text>
       </TouchableOpacity>
 
       <TouchableOpacity

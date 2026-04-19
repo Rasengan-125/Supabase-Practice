@@ -1,6 +1,7 @@
 import { supabase } from "@/utils/supabase";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -9,46 +10,48 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { z } from "zod";
+
+const schema = z.object({
+  email: z.string().email("Invalid email"),
+  password: z.string().min(6),
+});
+
+type FormValues = z.infer<typeof schema>;
 
 export default function Login() {
   const router = useRouter(); // Hook to handle navigation between screens
+  const {
+    control,
+    handleSubmit,
 
-  // State management for user credentials and UI feedback
-  const [email, setEmail] = useState(""); // Tracks email input
-  const [password, setPassword] = useState(""); // Tracks password input
-  const [loading, setLoading] = useState(false); // Controls the activity spinner
-  const [error, setError] = useState(""); // Stores error messages from validation or Supabase
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+    resolver: zodResolver(schema),
+    mode: "onChange",
+  });
 
-  /**
-   * Handles the sign-in process using Supabase Authentication.
-   */
-  const handleLogIn = async () => {
-    // Sanitize inputs by removing leading/trailing whitespace
+  const handleLogIn: SubmitHandler<FormValues> = async ({
+    email,
+    password,
+  }) => {
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
-    // Basic client-side validation to ensure fields aren't empty
-    if (!cleanEmail || !cleanPassword) {
-      setError("Please fill all fields");
-      return;
-    }
-
-    setLoading(true); // Start the loading indicator
-    setError("");
-
-    // Attempt to authenticate the user with Supabase
     const { error } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: cleanPassword,
     });
-
-    setLoading(false);
-
     if (error) {
-      // If Supabase returns an error (e.g., invalid credentials), show it to the user
-      setError(error.message);
+      setError("root", {
+        message: error.message,
+      });
     } else {
-      // On success, redirect to the Home screen and clear the navigation history
       router.replace({ pathname: "/Screens/Home" });
     }
   };
@@ -58,37 +61,53 @@ export default function Login() {
       <Text style={styles.title}>Log In</Text>
 
       {/* Email input field */}
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        value={email}
-        onChangeText={setEmail}
+      <Controller
+        control={control}
+        name="email"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextInput
+            style={[styles.input]}
+            placeholder="Email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            onBlur={onBlur}
+            onChangeText={onChange}
+            value={value}
+          />
+        )}
       />
 
       {/* Password input field */}
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        // Note: secureTextEntry should be uncommented in production to hide characters
-        value={password}
-        onChangeText={setPassword}
+      <Controller
+        control={control}
+        name="password"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextInput
+            style={[styles.input]}
+            placeholder="Password"
+            onBlur={onBlur}
+            onChangeText={onChange}
+            value={value}
+          />
+        )}
       />
 
-      {/* Conditional rendering for error messages */}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {/* Submission button with loading state support */}
-      <TouchableOpacity style={styles.button} onPress={handleLogIn}>
-        {loading ? (
+      <TouchableOpacity
+        style={[
+          styles.button,
+          (!!errors.email || !!errors.password) && { opacity: 0.7 },
+        ]}
+        onPress={handleSubmit(handleLogIn)}
+        disabled={!!errors.email || !!errors.password}
+      >
+        {isSubmitting ? (
           <ActivityIndicator color="#fff" />
         ) : (
           <Text style={styles.buttonText}>Log In</Text>
         )}
       </TouchableOpacity>
+      {errors.root && <Text style={styles.error}>{errors.root.message}</Text>}
 
-      {/* Navigation link for users who don't have an account yet */}
       <TouchableOpacity onPress={() => router.push("/auth/signUp")}>
         <Text style={styles.link}>Don’t have an account? Sign Up</Text>
       </TouchableOpacity>
@@ -135,10 +154,17 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: "center",
   },
+  textError: {
+    color: "red",
+    marginBottom: 10,
+  },
   // Styling for the "Sign Up" navigation link
   link: {
     marginTop: 20,
     textAlign: "center",
     color: "#007BFF",
+  },
+  inputError: {
+    borderColor: "red",
   },
 });

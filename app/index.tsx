@@ -1,3 +1,4 @@
+import useAuthStore from "@/Store/useAuthStore";
 import { supabase } from "@/utils/supabase";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
@@ -5,29 +6,26 @@ import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "../context/authContext";
 
 export default function IndexScreen() {
+  const user = useAuthStore((state) => state.user);
+  const ready = useAuthStore((state) => state.ready);
+
   const { isLoading, signInAnonymously } = useAuth();
   const router = useRouter();
   const hasRun = useRef(false); // ← prevent double-execution from StrictMode / re-renders
 
   useEffect(() => {
-    if (isLoading || hasRun.current) return;
+    if (isLoading || !ready || hasRun.current) return;
     hasRun.current = true;
 
     const bootstrap = async () => {
-      // Validate the session by actually hitting Supabase, not just reading
-      // from AsyncStorage. If the user was deleted, getUser() returns an error
-      // even though getSession() would still return a stale cached session.
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-
-      if (userData?.user && !userError) {
-        // Valid live session — go straight to the app
+      if (user?.id) {
+        // Valid session already exists — just redirect
         router.replace({ pathname: "/Screens/Home" });
         return;
       }
 
-      // Session is stale or missing — clear it and create a fresh anonymous user
-      await supabase.auth.signOut(); // clears AsyncStorage cache
+      // No session — sign out stale cache and create anonymous user
+      await supabase.auth.signOut();
       try {
         await signInAnonymously();
         router.replace({ pathname: "/Screens/Home" });
@@ -37,8 +35,7 @@ export default function IndexScreen() {
     };
 
     bootstrap();
-  }, [isLoading]); // ← only depends on isLoading, not session, so it won't loop
-
+  }, [isLoading, ready]);
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color="#6366f1" />

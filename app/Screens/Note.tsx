@@ -1,6 +1,9 @@
-import { getBooksCache, setBooksCache } from "@/utils/cache";
+import { useBooks } from "@/hooks/useBooks";
+import { useDeleteBook } from "@/hooks/useDeleteBook";
+import useAuthStore from "@/Store/useAuthStore";
 import { supabase } from "@/utils/supabase";
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -28,66 +31,22 @@ type Book = {
 
 const Notes = () => {
   const router = useRouter();
-  const [uid, setUid] = useState<string | null>(null);
-  const [notes, setNotes] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // ← separate flag for pull-to-refresh
-
-  const handleDelete = async (id: number) => {
-    const { error } = await supabase.from("books").delete().eq("id", id);
-    if (error) {
-      console.error("Error deleting book:", error.message);
-    } else {
-      setNotes((prev) => prev.filter((b) => b.id !== id));
-    }
-  };
-
-  // fetchBooks now just fetches and sets state — it doesn't return anything,
-  // so callers can't accidentally double-set state.
-  const fetchBooks = useCallback(async () => {
-    const cached = getBooksCache();
-    if (cached) setNotes(cached);
-
-    const { error, data } = await supabase
-      .from("books")
-      .select("*")
-      .order("id", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching books:", error.message);
-    } else {
-      setNotes(data ?? []);
-      setBooksCache(data ?? []);
-    }
-  }, []);
-
-  const getUid = async () => {
-    const { data } = await supabase.auth.getUser();
-    setUid(data.user?.id ?? null);
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await Promise.all([fetchBooks(), getUid()]);
-      setLoading(false);
-    };
-    init();
-  }, []);
+  const [refreshing, setRefreshing] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const { data: books, isLoading: loading, refetch } = useBooks();
+  const { mutate: deleteBook } = useDeleteBook();
+  const queryClient = useQueryClient();
 
   // Real-time INSERT subscription
   useEffect(() => {
+    if (!user) return;
     const channel = supabase
       .channel("books-channel")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "books" },
-        (payload) => {
-          const newBook = payload.new as Book;
-          // Prevent duplicates if the book was just added locally too
-          setNotes((prev) =>
-            prev.some((b) => b.id === newBook.id) ? prev : [newBook, ...prev],
-          );
+        { event: "*", schema: "public", table: "books" }, // the "*" means insert, update, delete
+        async () => {
+          queryClient.invalidateQueries({ queryKey: ["books"] }); // ← update the store, not local notes state
         },
       )
       .subscribe((status) => console.log("Subscription:", status));
@@ -95,14 +54,13 @@ const Notes = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]);
 
-  // Fixed: no longer tries to use fetchBooks return value
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchBooks();
+    await refetch();
     setRefreshing(false);
-  }, [fetchBooks]);
+  }, [refetch]);
 
   const renderItem = ({ item }: { item: Book }) => (
     <View style={styles.card}>
@@ -125,7 +83,7 @@ const Notes = () => {
         <TouchableOpacity
           style={[styles.button, styles.deleteBtn]}
           onPress={() => {
-            if (uid === item.user_id) {
+            if (user?.id === item.user_id) {
               Alert.alert(
                 "Delete Book",
                 "Are you sure?",
@@ -134,7 +92,7 @@ const Notes = () => {
                   {
                     text: "Delete",
                     style: "destructive",
-                    onPress: () => handleDelete(item.id),
+                    onPress: () => deleteBook(item.id),
                   },
                 ],
                 { cancelable: false },
@@ -147,10 +105,13 @@ const Notes = () => {
           <Text style={styles.buttonText}>Delete</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={[styles.button, styles.addBtn]}>
+          <Text style={styles.buttonText}>Add</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.button, styles.editBtn]}
           onPress={() => {
-            if (uid === item.user_id) {
+            if (user?.id === item.user_id) {
               router.replace({
                 pathname: "/Screens/[edit]",
                 params: { edit: item.id },
@@ -193,17 +154,19 @@ const Notes = () => {
           onPress={() => router.push("/Screens/Home")}
         />
         <Text style={{ fontSize: 24, fontWeight: "bold", marginBottom: 20 }}>
+          {books?.length ?? 0}
+        </Text>
+        <Text style={{ fontSize: 24, fontWeight: "bold", marginBottom: 20 }}>
           Books
         </Text>
       </View>
 
       <FlatList
-        data={notes}
+        data={books}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ paddingBottom: 20 }}
         refreshControl={
-          // Fixed: use dedicated `refreshing` state, not `loading`
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       />
@@ -243,6 +206,7 @@ const styles = StyleSheet.create({
   },
   button: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
   deleteBtn: { backgroundColor: "#FF4D4D" },
+  addBtn: { backgroundColor: "#ff8c00" },
   editBtn: { backgroundColor: "#007BFF" },
   buttonText: { color: "#fff", fontWeight: "bold" },
 });

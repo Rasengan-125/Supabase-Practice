@@ -1,9 +1,11 @@
 import { AuthProvider } from "@/context/authContext";
+import useAuthStore from "@/Store/useAuthStore";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
 import { Stack } from "expo-router";
 import { useEffect, useRef } from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
+const queryClient = new QueryClient();
 // Module-level variable — survives re-renders and is readable by any screen
 // without needing context or state. The callback screen reads this directly.
 let pendingDeepLinkUrl: string | null = null;
@@ -17,6 +19,10 @@ export function clearPendingDeepLink() {
 
 export default function RootLayout() {
   const capturedRef = useRef(false);
+  const authInit = useAuthStore((state) => state.init);
+  useEffect(() => {
+    authInit();
+  }, []);
 
   useEffect(() => {
     if (capturedRef.current) return;
@@ -40,12 +46,15 @@ export default function RootLayout() {
 
     return () => sub.remove();
   }, []);
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1 }}>
-        <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+          </AuthProvider>
+        </QueryClientProvider>
       </SafeAreaView>
     </SafeAreaProvider>
   );
